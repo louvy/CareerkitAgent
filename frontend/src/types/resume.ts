@@ -1,3 +1,5 @@
+import type { SectionType } from '@/lib/constants';
+
 export interface QrCodeItem {
   id: string;
   label: string;
@@ -156,7 +158,7 @@ export type SectionContent =
 export interface ResumeSection {
   id: string;
   resumeId: string;
-  type: string;
+  type: SectionType;
   title: string;
   sortOrder: number;
   visible: boolean;

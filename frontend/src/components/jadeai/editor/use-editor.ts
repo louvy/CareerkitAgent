@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useResumeStore } from '@/components/jadeai/editor/resume-store';
 import { useEditorStore } from '@/components/jadeai/editor/editor-store';
 import type { ResumeSection } from '@/types/resume';
@@ -10,6 +10,20 @@ import { api } from '@/lib/api';
 export function useEditor(resumeId: string) {
   const { setResume, setVersionId, sections, currentResume, updateSection, addSection, removeSection, reorderSections, reset: resetResume } = useResumeStore();
   const { pushSnapshot, reset: resetEditor } = useEditorStore();
+
+  // 撤销快照防抖：连续打字时只在“第一次”改动前记录状态，空闲 500ms 后才真正
+  // 入栈，把一个输入连击合并成单次撤销步骤（避免每次按键都塞满 undo 栈）。
+  const snapshotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pushSnapshotDebounced = useCallback(
+    (preEditSections: ResumeSection[]) => {
+      if (snapshotTimer.current) return;
+      snapshotTimer.current = setTimeout(() => {
+        pushSnapshot(preEditSections);
+        snapshotTimer.current = null;
+      }, 500);
+    },
+    [pushSnapshot]
+  );
 
   const loadResume = useCallback(async () => {
     try {
@@ -32,12 +46,19 @@ export function useEditor(resumeId: string) {
     };
   }, [loadResume, resetResume, resetEditor]);
 
+  // 卸载时清理未触发的快照定时器，避免向已卸载的 store 写入。
+  useEffect(() => {
+    return () => {
+      if (snapshotTimer.current) clearTimeout(snapshotTimer.current);
+    };
+  }, []);
+
   const handleUpdateSection = useCallback(
     (sectionId: string, content: any) => {
-      pushSnapshot(sections);
+      pushSnapshotDebounced(sections);
       updateSection(sectionId, content);
     },
-    [sections, pushSnapshot, updateSection]
+    [sections, pushSnapshotDebounced, updateSection]
   );
 
   const handleAddSection = useCallback(

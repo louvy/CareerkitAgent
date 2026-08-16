@@ -41,10 +41,14 @@ const sectionComponents: Record<string, React.ComponentType<{ section: ResumeSec
   custom: CustomSection,
 };
 
-export function SectionWrapper({ section, onUpdate, onRemove }: SectionWrapperProps) {
+export const SectionWrapper = React.memo(function SectionWrapper({ section, onUpdate, onRemove }: SectionWrapperProps) {
   const t = useTranslations('editor');
-  const { selectedSectionId, selectSection, showAiChat, toggleAiChat } = useEditorStore();
-  const { toggleSectionVisibility, updateSectionTitle } = useResumeStore();
+  const selectedSectionId = useEditorStore((s) => s.selectedSectionId);
+  const selectSection = useEditorStore((s) => s.selectSection);
+  const showAiChat = useEditorStore((s) => s.showAiChat);
+  const toggleAiChat = useEditorStore((s) => s.toggleAiChat);
+  const toggleSectionVisibility = useResumeStore((s) => s.toggleSectionVisibility);
+  const updateSectionTitle = useResumeStore((s) => s.updateSectionTitle);
   const { attributes, listeners } = useDragHandle();
   const isSelected = selectedSectionId === section.id;
   const [isRenaming, setIsRenaming] = useState(false);
@@ -159,4 +163,4 @@ export function SectionWrapper({ section, onUpdate, onRemove }: SectionWrapperPr
       </div>
     </div>
   );
-}
+});

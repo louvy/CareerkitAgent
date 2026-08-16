@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 import { useTranslations } from '@/components/jadeai/lib/i18n';
 import { Button } from '@/components/jadeai/ui/button';
@@ -24,7 +24,11 @@ export function EditorPreviewPanel() {
     return { ...currentResume, sections };
   }, [currentResume, sections]);
 
-  if (!liveResume) return null;
+  // 编辑时把高消耗的简历预览推迟到浏览器空闲时段渲染，
+  // 保证左侧编辑器的输入不被重渲染阻塞（useDeferredValue）。
+  const deferredResume = useDeferredValue(liveResume);
+
+  if (!deferredResume) return null;
 
   const scale = zoom / 100;
 
@@ -68,12 +72,12 @@ export function EditorPreviewPanel() {
             }}
           >
             <PreviewErrorBoundary
-              resetKey={liveResume.sections}
+              resetKey={deferredResume.sections}
               fallback={
                 <div className="p-8 text-center text-sm text-zinc-500">{t('previewError')}</div>
               }
             >
-              <ResumePreview resume={liveResume} />
+              <ResumePreview resume={deferredResume} />
             </PreviewErrorBoundary>
           </div>
         </div>

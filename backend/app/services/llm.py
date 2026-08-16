@@ -3,19 +3,20 @@
 - 从 AppSetting 读取供应商配置（加密存储），未配置时回退默认值
 - 支持结构化输出（JSON + Pydantic 校验，失败重试）
 - Token 统计回写 RunContext（可观测性）
-- Redis 令牌桶限流 + 结构化输出校验反馈重试
+- 滑动窗口限流（超限返回 429）+ 结构化输出校验反馈重试
 """
 
 import json
 import logging
 import time
+import uuid
 from typing import Any, TypeVar
 
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
 from app.core.deps import redis_client
-from app.core.exceptions import LLMNotConfiguredError
+from app.core.exceptions import LLMNotConfiguredError, RateLimitError
 from app.harness.hooks import RunContext
 from app.services.crypto import decrypt_value
 from app.services.settings_store import get_setting
@@ -33,13 +34,24 @@ SETTING_EMBEDDING_MODEL = "llm.embedding_model"
 # 限流：每分钟最多 LLM 调用次数
 RATE_LIMIT_PER_MINUTE = 30
 
+# 供应商解析结果缓存（减少每次 LLM 调用新开 DB 会话）；TTL 内允许密钥变更最终生效
+_provider_cache: dict[str, tuple[float, tuple[str, str, str]]] = {}
+_PROVIDER_TTL = 30.0
+
 
 def _resolve_chat_provider(model_override: str | None = None) -> tuple[str, str, str]:
     """解析 chat 供应商配置，返回 (base_url, api_key, model)。
 
     优先模型管理（LLMModel）：按 model 名匹配 → 分类默认模型；
     无模型条目时回退 AppSetting 旧配置，最后用默认值。
+    结果缓存 _PROVIDER_TTL 秒，避免每次 LLM 调用都新开 DB 会话。
     """
+    cache_key = model_override or ""
+    now = time.time()
+    cached = _provider_cache.get(cache_key)
+    if cached is not None and now - cached[0] < _PROVIDER_TTL:
+        return cached[1]
+
     from app.models.llm_model import LLMModel
 
     from app.core.deps import SessionLocal
@@ -59,12 +71,16 @@ def _resolve_chat_provider(model_override: str | None = None) -> tuple[str, str,
                 .first()
             )
         if matched is not None and matched.api_key:
-            return matched.base_url, decrypt_value(matched.api_key), matched.model
+            result = (matched.base_url, decrypt_value(matched.api_key), matched.model)
+            _provider_cache[cache_key] = (now, result)
+            return result
     # 回退旧设置
     base_url = get_setting(SETTING_BASE_URL) or ""
     api_key = decrypt_value(get_setting(SETTING_API_KEY)) if get_setting(SETTING_API_KEY) else ""
     model = get_setting(SETTING_MODEL) or ""
-    return base_url, api_key, model
+    result = (base_url, api_key, model)
+    _provider_cache[cache_key] = (now, result)
+    return result
 
 
 def _model_for_ctx(ctx: RunContext | None) -> str | None:
@@ -88,15 +104,20 @@ def build_client(model_override: str | None = None) -> tuple[OpenAI, str]:
 
 
 def _check_rate_limit() -> None:
-    """Redis 令牌桶：每 2 秒 1 个令牌，容量 30。"""
+    """滑动窗口限流：最近 60s 内 LLM 调用不超过 RATE_LIMIT_PER_MINUTE 次。
+
+    超限抛出 RateLimitError（HTTP 429），不再误用 PermissionError 导致 500。
+    """
     key = "careerkit:llm:rate"
-    if redis_client.set(key, 1, nx=True, ex=60):
-        redis_client.expire(key, 60)
-        return
-    current = int(redis_client.get(key) or 0)
-    if current >= RATE_LIMIT_PER_MINUTE:
-        raise LLMNotConfiguredError() if False else PermissionError("LLM 调用过于频繁，请稍后再试")
-    redis_client.incr(key)
+    now = time.time()
+    window = 60.0
+    # 清理窗口外的旧时间戳
+    redis_client.zremrangebyscore(key, 0, now - window)
+    if redis_client.zcard(key) >= RATE_LIMIT_PER_MINUTE:
+        raise RateLimitError()
+    # 用唯一成员记录本次调用时间戳
+    redis_client.zadd(key, {f"{now}:{uuid.uuid4().hex}": now})
+    redis_client.expire(key, int(window))
 
 
 def chat_json(

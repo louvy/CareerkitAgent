@@ -32,6 +32,13 @@ def get_llm_ready() -> bool:
     """LLM 是否已配置。"""
     from app.core.deps import SessionLocal
 
+    from app.core.exceptions import DecryptError
+
     with SessionLocal() as db:
         row = db.query(AppSetting).filter(AppSetting.key == "llm.api_key").first()
-    return row is not None and bool(decrypt_value(row.value))
+    if row is None:
+        return False
+    try:
+        return bool(decrypt_value(row.value))
+    except DecryptError:
+        return False

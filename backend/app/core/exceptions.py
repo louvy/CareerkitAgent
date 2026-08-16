@@ -39,6 +39,27 @@ class LLMNotConfiguredError(HarnessError):
         super().__init__("LLM 供应商尚未配置，请在设置页完成配置", code="LLM_NOT_CONFIGURED", status_code=400)
 
 
+class RateLimitError(HarnessError):
+    """LLM 调用被限流（返回 429 而非通用 500）。"""
+
+    def __init__(self, message: str = "LLM 调用过于频繁，请稍后再试"):
+        super().__init__(message, code="RATE_LIMITED", status_code=429)
+
+
+class DecryptError(HarnessError):
+    """敏感数据解密失败（密钥变更 / 数据损坏），不再被静默吞掉。"""
+
+    def __init__(self, message: str = "敏感数据解密失败，可能密钥已变更或数据损坏"):
+        super().__init__(message, code="DECRYPT_FAILED", status_code=500)
+
+
+class EmbeddingDimensionError(HarnessError):
+    """embedding 维度与知识库向量列不一致。"""
+
+    def __init__(self, message: str):
+        super().__init__(message, code="EMBEDDING_DIM_MISMATCH", status_code=400)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(HarnessError)
     async def harness_error_handler(_: Request, exc: HarnessError) -> JSONResponse:

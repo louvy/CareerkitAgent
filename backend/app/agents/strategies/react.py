@@ -46,13 +46,15 @@ class ReActStrategy(AgentStrategy):
     ) -> dict:
         history: list[dict] = [{"role": "user", "content": user_input}]
         final_answer = ""
+        last_response = ""
 
         def model_node(state: _State) -> dict:
-            nonlocal final_answer
+            nonlocal final_answer, last_response
             ctx.trace.add_event("node_start", {"node": "model"})
             try:
                 prompt = system_prompt + "\n\n" + _PROTOCOL_PROMPT.format(max_iter=MAX_ITERATIONS)
                 response = chat_text(prompt, json.dumps(state["messages"], ensure_ascii=False), ctx=ctx)
+                last_response = response
                 # 旁路提取 final 答案：模型直接输出 final 时不会经过 tool_node
                 try:
                     parsed = json.loads(response)
@@ -72,7 +74,15 @@ class ReActStrategy(AgentStrategy):
                 try:
                     parsed = json.loads(state["output"])
                 except json.JSONDecodeError:
-                    parsed = {"action": "final", "answer": state["output"]}
+                    # 模型未按协议输出 JSON：作为反馈 observation 让模型自我纠正，不提前结束
+                    obs = {
+                        "role": "tool",
+                        "content": f"协议解析失败，请只输出 JSON 协议（tool_call 或 final）。你刚才的输出：{state['output'][:500]}",
+                    }
+                    return {
+                        "messages": state["messages"] + [{"role": "assistant", "content": state["output"]}, obs],
+                        "output": state["output"],
+                    }
 
                 if parsed.get("action") == "final":
                     final_answer = parsed.get("answer", "")
@@ -95,10 +105,13 @@ class ReActStrategy(AgentStrategy):
         def should_continue(state: _State) -> str:
             try:
                 parsed = json.loads(state["output"])
-                is_final = parsed.get("action") == "final"
+                is_final = isinstance(parsed, dict) and parsed.get("action") == "final"
             except json.JSONDecodeError:
-                is_final = True
-            if is_final or state["iteration"] >= MAX_ITERATIONS:
+                # 非 JSON 回复不视为终止，给模型重试机会
+                is_final = False
+            if state["iteration"] >= MAX_ITERATIONS:
+                return "end"
+            if is_final:
                 return "end"
             return "continue"
 
@@ -111,5 +124,8 @@ class ReActStrategy(AgentStrategy):
         app = graph.compile()
 
         app.invoke({"messages": history, "iteration": 0, "output": ""})
+        # 兜底：达到最大迭代仍未拿到 final 时，使用最后一轮模型原始输出，避免空答案
+        if not final_answer and last_response:
+            final_answer = last_response
         ctx.trace.final_output = final_answer
         return {"output": final_answer}

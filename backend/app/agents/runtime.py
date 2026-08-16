@@ -75,7 +75,9 @@ class AgentRuntime:
             suggestions=model.suggestions,
         )
 
-    def _gate_output(self, output_text: str, task_description: str, source_text: str) -> tuple[GateDecision, dict, ReviewVerdict | None]:
+    def _gate_output(
+        self, output_text: str, task_description: str, source_text: str, retry_count: int = 0
+    ) -> tuple[GateDecision, dict, ReviewVerdict | None]:
         """执行质量门禁：宪法校验 + 评审。返回（决策，门禁记录，评审结论）。"""
         violations = run_constitution_check(output_text, source_text=source_text)
         has_error = has_blocking_violation(violations)
@@ -83,7 +85,7 @@ class AgentRuntime:
             return GateDecision.REJECT, {"decision": "reject", "violations": [v.message for v in violations]}, None
 
         verdict = self._review(output_text, task_description, source_text)
-        decision, record = self.gate.run(verdict)
+        decision, record = self.gate.run(verdict, retry_count=retry_count)
         return decision, record, verdict
 
     # ---- 可观测性：落库 ----
@@ -133,38 +135,65 @@ class AgentRuntime:
         )
         guard = self._build_guard()
 
-        try:
+        # 生成阶段：定义为可重复调用的闭包，供质量门禁 RETRY 重新生成
+        def _generate() -> dict:
             if executor is not None:
                 # 业务处理器路径：内部完成 LLM 调用与埋点
-                result = executor(ctx, guard)
-            else:
-                # 通用策略图路径
-                strategy = get_strategy(strategy_name or self.agent.strategy)
-                system_prompt = self._build_system_prompt(json.dumps(context, ensure_ascii=False)[:1500])
-                result = strategy.run(
-                    system_prompt=system_prompt,
-                    user_input=user_input,
-                    context=context,
-                    ctx=ctx,
-                    guard=guard,
-                )
+                return executor(ctx, guard)
+            # 通用策略图路径
+            strategy = get_strategy(strategy_name or self.agent.strategy)
+            system_prompt = self._build_system_prompt(json.dumps(context, ensure_ascii=False)[:1500])
+            return strategy.run(
+                system_prompt=system_prompt,
+                user_input=user_input,
+                context=context,
+                ctx=ctx,
+                guard=guard,
+            )
+
+        retry_count = 0
+        max_retries = self.gate.max_retries
+        try:
+            result = _generate()
             ctx.trace.final_output = result if isinstance(result, dict) else {"output": str(result)}
         except Exception as exc:
             logger.error("Agent %s 执行失败: %s", self.agent.name, exc)
             ctx.trace.add_event("run_error", {"error": str(exc)[:500]})
             self._persist(ctx, "", task_description, "error", {}, error=str(exc), call_type=call_type)
-            audit("agent.run.error", f"agent:{self.agent.name}", {"run_id": ctx.run_id, "error": str(exc)})
+            audit("agent.run.error", f"agent:{self.agent.name}", {"run_id": ctx.run_id, "error": str(exc)}, db=self.db)
             raise
 
         output_text = result.get("output") if isinstance(result, dict) else str(result)
         if not isinstance(output_text, str):
             output_text = json.dumps(output_text, ensure_ascii=False)
 
-        # 验证与质量
+        # 验证与质量：宪法校验 + 评审门禁；RETRY 有界重试，DEGRADE 降级展示
         gate: dict = {}
         decision = GateDecision.PASS
+        verdict: ReviewVerdict | None = None
         if with_quality_gate and self.agent.name != "reviewer":
-            decision, gate, verdict = self._gate_output(output_text, task_description, source_text)
+            while True:
+                decision, gate, verdict = self._gate_output(
+                    output_text, task_description, source_text, retry_count=retry_count
+                )
+                if decision == GateDecision.REJECT:
+                    break
+                if decision == GateDecision.RETRY and retry_count < max_retries:
+                    retry_count += 1
+                    logger.info("质量门禁触发重试 (%d/%d): agent=%s", retry_count, max_retries, self.agent.name)
+                    try:
+                        result = _generate()
+                    except Exception as exc:
+                        logger.error("Agent %s 重试生成失败: %s", self.agent.name, exc)
+                        audit("agent.run.retry_error", f"agent:{self.agent.name}", {"run_id": ctx.run_id, "error": str(exc)}, db=self.db)
+                        break
+                    output_text = result.get("output") if isinstance(result, dict) else str(result)
+                    if not isinstance(output_text, str):
+                        output_text = json.dumps(output_text, ensure_ascii=False)
+                    ctx.trace.final_output = result if isinstance(result, dict) else {"output": str(result)}
+                    continue  # 用新输出重新走门禁
+                break  # PASS 或 DEGRADE（或重试耗尽后的 DEGRADE/REJECT）
+
             if verdict is not None:
                 result["review"] = {
                     "score": verdict.score,
@@ -175,15 +204,18 @@ class AgentRuntime:
                 }
             if decision == GateDecision.REJECT:
                 self._persist(ctx, output_text, task_description, "rejected", gate, call_type=call_type)
-                audit("agent.run.rejected", f"agent:{self.agent.name}", {"run_id": ctx.run_id, "gate": gate})
+                audit("agent.run.rejected", f"agent:{self.agent.name}", {"run_id": ctx.run_id, "gate": gate}, db=self.db)
                 raise ClosedLoopError(f"Agent「{self.agent.name}」输出未通过质量门禁：{gate}")
+            if decision == GateDecision.DEGRADE:
+                result["degraded"] = True
+                audit("agent.run.degraded", f"agent:{self.agent.name}", {"run_id": ctx.run_id, "gate": gate, "score": verdict.score if verdict else None}, db=self.db)
 
         result["gate"] = gate
         result["decision"] = decision.value
         result["run_id"] = ctx.run_id
 
         self._persist(ctx, output_text, task_description, "success", gate, call_type=call_type)
-        audit("agent.run", f"agent:{self.agent.name}", {"run_id": ctx.run_id, "decision": decision.value})
+        audit("agent.run", f"agent:{self.agent.name}", {"run_id": ctx.run_id, "decision": decision.value}, db=self.db)
         return result
 
 
@@ -198,13 +230,26 @@ def run_agent_task(
     with_quality_gate: bool = True,
     ctx: RunContext | None = None,
     call_type: str = "invoke",
+    request_id: str | None = None,
 ) -> dict:
-    """便捷入口：按 Agent 名称执行（Workbench 子任务分发时使用）。"""
+    """便捷入口：按 Agent 名称执行（Workbench 子任务分发时使用）。
+
+    request_id 用于把顶层请求的链路 ID 透传到子 Agent 任务（如 Workbench
+    分发），保证跨 Agent 的 Trace 能按同一请求串联。
+    """
     with SessionLocal() as db:
         agent = db.query(Agent).filter(Agent.name == agent_name).first()
         if agent is None:
             raise NotFoundError(f"Agent「{agent_name}」不存在")
         runtime = AgentRuntime(agent, db)
+        if ctx is None and request_id is not None:
+            ctx = RunContext(
+                run_id=uuid.uuid4().hex[:16],
+                agent_name=agent_name,
+                strategy=strategy_name or agent.strategy,
+                request_id=request_id,
+                model=(agent.config or {}).get("model") or None,
+            )
         return runtime.run(
             task_description=task_description,
             user_input=user_input,

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.agents.business.interview import run_coach_turn, run_generate_questions, run_review_answers
 from app.agents.runtime import AgentRuntime
 from app.core.deps import get_db
+from app.harness.constitution import constitution_text
 from app.core.exceptions import NotFoundError
 from app.models.interview import (
     InterviewAnswer,
@@ -232,11 +233,17 @@ def coach_turn(session_id: int, payload: CoachTurn, db: Session = Depends(get_db
             resume_text = version.plain_text
 
     memory = MemoryService(f"interview-coach:{session_id}")
-    messages = memory.assemble(db, payload.message)
-    messages.append({"role": "user", "content": payload.message})
+    system_prompt = (
+        constitution_text() + "\n\n" + COACH_SYSTEM_PROMPT + "\n\n候选人简历背景：\n" + resume_text[:3000]
+    )
+    # 经 build_llm_messages 注入滚动摘要（若已生成），并按窗口裁剪
+    llm_messages = memory.build_llm_messages(db, system_prompt, payload.message)
+    # build_llm_messages 返回 [system, (摘要), 历史窗口, 当前输入]；
+    # coach 内部会自拼 system，故去掉首条 system，仅把 [摘要, 历史, 当前输入] 作为对话历史
+    conversation_messages = llm_messages[1:]
 
     def executor(ctx, guard):
-        output = run_coach_turn(messages, resume_text, ctx, guard)
+        output = run_coach_turn(conversation_messages, resume_text, ctx, guard)
         return {"output": output}
 
     runtime = AgentRuntime(agent, db)
@@ -250,5 +257,6 @@ def coach_turn(session_id: int, payload: CoachTurn, db: Session = Depends(get_db
     )
     memory.add_message(db, "user", payload.message)
     memory.add_message(db, "assistant", result["output"])
-    memory.maybe_summarize(db, messages)
+    # 按完整历史触发滚动摘要（仅在超阈值时生成），供后续轮次注入
+    memory.maybe_summarize(db, memory.assemble(db, ""))
     return {"reply": result["output"], "run_id": result.get("run_id")}

@@ -1,4 +1,4 @@
-"""请求链路中间件：X-Request-Id 透传、审计日志、输入净化、CORS。"""
+"""请求链路中间件：X-Request-Id 透传、审计日志、入站提示注入扫描、CORS。"""
 
 import contextvars
 import logging
@@ -8,6 +8,7 @@ import uuid
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 logger = logging.getLogger("careerkit.audit")
 
@@ -24,6 +25,11 @@ INJECTION_PATTERNS = [
 
 # 敏感字段：日志与 Trace 中脱敏
 SENSITIVE_KEYS = {"api_key", "apikey", "secret", "password", "token", "key", "authorization"}
+
+# 入站提示注入拦截开关：默认仅记录不阻断；设为 True 则命中即拒绝（HTTP 400）
+BLOCK_INJECTION = False
+# 仅扫描 JSON 请求体，且体积不超过此上限（避免大文件/上传被误扫）
+_SCAN_MAX_BYTES = 64 * 1024
 
 
 def redact(value: object) -> object:
@@ -47,10 +53,32 @@ def scan_prompt_injection(text: str) -> list[str]:
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):
-    """为每个请求生成 X-Request-Id、记录审计日志并做内容扫描。"""
+    """为每个请求生成 X-Request-Id、记录审计日志，并对入站 JSON 体做提示注入扫描。"""
 
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex[:16]
+
+        # 入站提示注入 / PII 扫描：仅 JSON 且体积受限，命中先记录（或按开关拦截）
+        if request.method in ("POST", "PUT", "PATCH"):
+            content_type = request.headers.get("content-type", "")
+            if "application/json" in content_type:
+                try:
+                    body = await request.body()
+                    if body and len(body) <= _SCAN_MAX_BYTES:
+                        hits = scan_prompt_injection(body.decode("utf-8", errors="ignore"))
+                        if hits:
+                            logger.warning(
+                                "入站提示注入扫描命中 req=%s path=%s hits=%s",
+                                request_id, request.url.path, hits,
+                            )
+                            if BLOCK_INJECTION:
+                                return JSONResponse(
+                                    status_code=400,
+                                    content={"detail": "检测到疑似提示注入内容，请求已被拦截", "code": "PROMPT_INJECTION"},
+                                )
+                except Exception:  # 扫描失败不影响主流程
+                    pass
+
         token = request_id_var.set(request_id)
         start = time.perf_counter()
         try:

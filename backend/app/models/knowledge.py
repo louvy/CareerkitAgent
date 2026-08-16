@@ -7,7 +7,12 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.config import settings
 from app.models.base import Base
+
+# 向量列维度：必须与所选 embedding 模型输出维度一致，否则入库会失败或静默丢向量。
+# 上传时在路由层校验维度匹配（见 api/routes/knowledge.py）。
+EMBEDDING_DIM = settings.embedding_dim
 
 
 class KnowledgeBase(Base):
@@ -47,7 +52,7 @@ class KnowledgeChunk(Base):
     # 分片在源文档中的序号
     chunk_index: Mapped[int] = mapped_column(Integer, default=0)
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
     # 元数据：{title, section, page}（列名 metadata 为保留字，属性名用 doc_meta）
     doc_meta: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

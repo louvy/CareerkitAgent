@@ -76,8 +76,9 @@ class MemoryService:
         if summary:
             messages.append({"role": "system", "content": f"## 历史对话摘要\n{summary}"})
 
-        # 滑动窗口：只保留最近 N 轮
-        recent = history[-(self.window_rounds * 2) :] if len(history) > self.window_rounds * 2 else history
+        # 滑动窗口：有摘要时仅保留最近 window_rounds 轮，避免与摘要重叠双发；否则保留 window_rounds*2
+        window = self.window_rounds if summary else self.window_rounds * 2
+        recent = history[-window:] if len(history) > window else history
         messages.extend(recent)
 
         if current_user_input:
@@ -92,7 +93,7 @@ class MemoryService:
         total_chars = sum(len(m.get("content", "")) for m in history)
         if total_chars < settings.memory_summary_token_threshold * 2:  # 粗略 2 字符/Token
             return False
-        old_part = history[: -settings.memory_window_rounds]
+        old_part = history[: -self.window_rounds]
         if not old_part:
             return False
         try:

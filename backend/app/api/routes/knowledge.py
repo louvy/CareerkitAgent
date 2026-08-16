@@ -10,11 +10,12 @@ import re
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db
-from app.core.exceptions import NotFoundError
-from app.models.knowledge import KnowledgeBase, KnowledgeChunk
+from app.core.exceptions import EmbeddingDimensionError, NotFoundError
+from app.models.knowledge import EMBEDDING_DIM, KnowledgeBase, KnowledgeChunk
 from app.services.embedding import embed_texts
 from app.services.retriever import hybrid_search
 from app.services.storage import delete_object, upload_fileobj
@@ -101,7 +102,11 @@ def _get_kb(db: Session, kb_id: int) -> KnowledgeBase:
     return kb
 
 
-def _kb_dict(kb: KnowledgeBase) -> dict:
+def _chunk_count(db: Session, kb_id: int) -> int:
+    return db.query(func.count(KnowledgeChunk.id)).filter(KnowledgeChunk.knowledge_base_id == kb_id).scalar() or 0
+
+
+def _kb_dict(kb: KnowledgeBase, chunk_count: int = 0) -> dict:
     return {
         "id": kb.id,
         "name": kb.name,
@@ -110,7 +115,7 @@ def _kb_dict(kb: KnowledgeBase) -> dict:
         "chunk_size": kb.chunk_size,
         "chunk_overlap": kb.chunk_overlap,
         "embedding_model_id": kb.embedding_model_id,
-        "chunk_count": len(kb.chunks),
+        "chunk_count": chunk_count,
         "created_at": kb.created_at,
     }
 
@@ -118,7 +123,13 @@ def _kb_dict(kb: KnowledgeBase) -> dict:
 @router.get("/knowledge-bases")
 def list_kb(db: Session = Depends(get_db)):
     kbs = db.query(KnowledgeBase).order_by(KnowledgeBase.id.desc()).all()
-    return [_kb_dict(kb) for kb in kbs]
+    # 一次分组聚合计数，避免逐个加载 chunks 集合
+    counts = dict(
+        db.query(KnowledgeChunk.knowledge_base_id, func.count(KnowledgeChunk.id))
+        .group_by(KnowledgeChunk.knowledge_base_id)
+        .all()
+    )
+    return [_kb_dict(kb, counts.get(kb.id, 0)) for kb in kbs]
 
 
 @router.post("/knowledge-bases")
@@ -150,7 +161,7 @@ def update_kb(kb_id: int, payload: KnowledgeBaseIn, db: Session = Depends(get_db
     kb.chunk_overlap = payload.chunk_overlap
     kb.embedding_model_id = payload.embedding_model_id
     db.commit()
-    return _kb_dict(kb)
+    return _kb_dict(kb, _chunk_count(db, kb.id))
 
 
 @router.post("/knowledge-bases/preview-chunks")
@@ -182,12 +193,15 @@ def delete_kb(kb_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/knowledge-bases/{kb_id}/upload")
-async def upload_documents(kb_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
-    """上传文档（txt/md），按知识库切块配置分片，用指定 embedding 模型向量化入库。"""
+def upload_documents(kb_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    """上传文档（txt/md），按知识库切块配置分片，用指定 embedding 模型向量化入库。
+
+    使用同步路由：FastAPI 会将同步处理函数在线程池中执行，避免阻塞 embedding 调用卡住事件循环。
+    """
     kb = _get_kb(db, kb_id)
     results = []
     for file in files:
-        data = await file.read()
+        data = file.file.read()
         text = data.decode("utf-8", errors="ignore")
         # 原文存 MinIO（知识库原始文档）
         obj_name = upload_fileobj(
@@ -199,6 +213,12 @@ async def upload_documents(kb_id: int, files: list[UploadFile] = File(...), db: 
             results.append({"file": file.filename, "chunks": 0, "message": "空文档"})
             continue
         vectors = embed_texts(chunks, embedding_model_id=kb.embedding_model_id) if chunks else []
+        # 维度校验：所选 embedding 模型维度必须与向量列一致，否则入库会失败或静默丢向量
+        if vectors and vectors[0] and len(vectors[0]) != EMBEDDING_DIM:
+            raise EmbeddingDimensionError(
+                f"embedding 模型维度为 {len(vectors[0])}，与知识库向量列维度 {EMBEDDING_DIM} 不一致；"
+                f"请统一 embedding 模型维度（或在 config 调整 embedding_dim 并重建知识库）。"
+            )
         for idx, (chunk, vector) in enumerate(zip(chunks, vectors, strict=False)):
             db.add(
                 KnowledgeChunk(

@@ -11,7 +11,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U careerkit -d careerkit"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-careerkit} -d ${POSTGRES_DB:-careerkit}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -19,12 +19,15 @@ services:
   redis:
     image: redis:7
     container_name: careerkit-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD not set in .env}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD not set in .env}
     ports:
       - "6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -53,11 +56,11 @@ services:
     container_name: careerkit-backend
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-careerkit}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-careerkit}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-careerkit}:${POSTGRES_PASSWORD:-careerkit}@postgres:5432/${POSTGRES_DB:-careerkit}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD not set in .env}@redis:6379/0
       MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-admin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-careerkit}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-careerkit123}
     ports:
       - "8000:8000"
     depends_on:
@@ -67,9 +70,7 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    command: >
-      sh -c "uv run alembic upgrade head &&
-             uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   frontend:
     build:

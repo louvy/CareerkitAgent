@@ -6,12 +6,12 @@ WORKDIR /srv
 # 使用清华镜像源安装 uv
 RUN pip install --no-cache-dir uv -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 
-RUN uv sync --no-dev
+RUN uv sync --frozen --no-dev
 
 EXPOSE 8000
 

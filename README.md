@@ -2,7 +2,6 @@
 
 基于 **Harness 编程模式** 的 AI 求职入职工作台：简历诊断/优化、JD 匹配、面试刷题与模拟面试，全部 Agent 动作受 **可观测性 / 治理与安全 / 验证与质量** 三支柱约束。
 
-> 布局与求职功能参考 [Lujie-Careerkit](https://github.com/Chozzc/Lujie-Careerkit)，Agent 编排与 Harness 模式参考 [AgentForge](https://github.com/zcding4812/AgentForge)（均为 Apache-2.0，复用设计思想而非代码）。
 
 ## 功能总览
 

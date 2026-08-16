@@ -7,6 +7,7 @@
 import hashlib
 import json
 import logging
+import time
 
 from app.core.deps import redis_client
 from app.services.crypto import decrypt_value
@@ -17,13 +18,24 @@ logger = logging.getLogger("careerkit.embedding")
 
 EMBED_CACHE_TTL = 86400 * 7
 
+# embedding 供应商解析结果缓存，减少每次向量化调用新开 DB 会话
+_embed_provider_cache: dict[str, tuple[float, tuple[str, str, str]]] = {}
+_EMBED_PROVIDER_TTL = 30.0
+
 
 def _resolve_embedding_provider(embedding_model_id: int | None = None) -> tuple[str, str, str]:
     """解析 embedding 供应商，返回 (base_url, api_key, model)。
 
     优先模型管理（LLMModel）：按 ID 匹配 → 分类默认模型；
     无模型条目时回退 AppSetting 旧配置与配置默认值。
+    结果缓存 _EMBED_PROVIDER_TTL 秒，避免每次向量化调用新开 DB 会话。
     """
+    cache_key = str(embedding_model_id or "")
+    now = time.time()
+    cached = _embed_provider_cache.get(cache_key)
+    if cached is not None and now - cached[0] < _EMBED_PROVIDER_TTL:
+        return cached[1]
+
     from app.core.deps import SessionLocal
     from app.models.llm_model import LLMModel
 
@@ -38,13 +50,17 @@ def _resolve_embedding_provider(embedding_model_id: int | None = None) -> tuple[
                 .first()
             )
         if matched is not None and matched.api_key:
-            return matched.base_url, decrypt_value(matched.api_key), matched.model
+            result = (matched.base_url, decrypt_value(matched.api_key), matched.model)
+            _embed_provider_cache[cache_key] = (now, result)
+            return result
     # 回退旧设置
     from app.services.llm import SETTING_API_KEY, SETTING_BASE_URL
 
     base_url = get_setting(SETTING_BASE_URL) or ""
     api_key = decrypt_value(get_setting(SETTING_API_KEY)) if get_setting(SETTING_API_KEY) else ""
-    return base_url, api_key, get_embedding_model()
+    result = (base_url, api_key, get_embedding_model())
+    _embed_provider_cache[cache_key] = (now, result)
+    return result
 
 
 def embed_texts(texts: list[str], embedding_model_id: int | None = None) -> list[list[float]]:

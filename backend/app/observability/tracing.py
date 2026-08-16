@@ -31,5 +31,6 @@ class TraceCollector:
             "run_id": self.run_id,
             "events": self.events,
             "prompts": self.prompts,
-            "final_output": redact(self.final_output),
+            # final_output 是 Agent 完整输出，需完整保留供链路回放，不做 redact 截断
+            "final_output": self.final_output,
         }

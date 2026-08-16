@@ -90,7 +90,7 @@ def create_model(payload: ModelIn, db: Session = Depends(get_db)):
         _clear_default(db, payload.category)
     db.add(row)
     db.commit()
-    audit("model.create", f"model:{row.model}", {"category": row.category})
+    audit("model.create", f"model:{row.model}", {"category": row.category}, db=db)
     return _model_dict(row)
 
 
@@ -110,7 +110,7 @@ def update_model(model_id: int, payload: ModelIn, db: Session = Depends(get_db))
         _clear_default(db, payload.category, except_id=row.id)
     row.is_default = payload.is_default
     db.commit()
-    audit("model.update", f"model:{row.model}", {"model_id": model_id})
+    audit("model.update", f"model:{row.model}", {"model_id": model_id}, db=db)
     return _model_dict(row)
 
 
@@ -121,7 +121,7 @@ def set_default(model_id: int, db: Session = Depends(get_db)):
     _clear_default(db, row.category, except_id=row.id)
     row.is_default = True
     db.commit()
-    audit("model.set_default", f"model:{row.model}", {"model_id": model_id})
+    audit("model.set_default", f"model:{row.model}", {"model_id": model_id}, db=db)
     return _model_dict(row)
 
 
@@ -133,7 +133,7 @@ def delete_model(model_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="默认模型不可删除，请先切换默认模型")
     db.delete(row)
     db.commit()
-    audit("model.delete", f"model:{row.model}", {"model_id": model_id})
+    audit("model.delete", f"model:{row.model}", {"model_id": model_id}, db=db)
     return {"message": "已删除"}
 
 

@@ -80,7 +80,7 @@ def create_tool(payload: ToolIn, db: Session = Depends(get_db)):
     )
     db.add(tool)
     db.commit()
-    audit("tool.create", f"tool:{tool.name}", {"category": tool.category})
+    audit("tool.create", f"tool:{tool.name}", {"category": tool.category}, db=db)
     return _tool_dict(tool)
 
 
@@ -97,7 +97,7 @@ def update_tool(tool_id: int, payload: ToolIn, db: Session = Depends(get_db)):
     tool.description = payload.description
     tool.config = payload.config
     db.commit()
-    audit("tool.update", f"tool:{tool.name}", {"tool_id": tool_id})
+    audit("tool.update", f"tool:{tool.name}", {"tool_id": tool_id}, db=db)
     return _tool_dict(tool)
 
 
@@ -106,5 +106,5 @@ def delete_tool(tool_id: int, db: Session = Depends(get_db)):
     tool = _get_tool(db, tool_id)
     db.delete(tool)
     db.commit()
-    audit("tool.delete", f"tool:{tool.name}", {"tool_id": tool_id})
+    audit("tool.delete", f"tool:{tool.name}", {"tool_id": tool_id}, db=db)
     return {"message": "已删除"}

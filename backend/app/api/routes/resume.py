@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.agents.business.resume import run_diagnosis, run_optimize
-from app.agents.runtime import AgentRuntime
+from app.api.routes.pipeline import run_harness_pipeline
 from app.core.deps import get_db
 from app.core.exceptions import NotFoundError
 from app.models.resume import Resume, ResumeVersion
@@ -19,6 +19,9 @@ from app.services.export import resume_to_docx_bytes
 from app.services.storage import download_bytes, upload_bytes
 
 router = APIRouter(prefix="/api", tags=["resume"])
+
+# 允许代理下载的对象名前缀（防止 MinIO 任意对象越权读取）
+ALLOWED_OBJECT_PREFIXES = ("exports/", "knowledge/", "resumes/")
 
 
 class ResumeCreate(BaseModel):
@@ -179,6 +182,11 @@ def export_version(version_id: int, db: Session = Depends(get_db)):
 @router.get("/objects/{object_name:path}/download")
 def download_export(object_name: str):
     """下载导出的对象文件（容器内 MinIO 地址对浏览器不可达，统一经后端代理）。"""
+    # 路径穿越与越权防护：拒绝 `..`、绝对路径、反斜杠，且限定在已知业务前缀内
+    if not object_name or ".." in object_name or object_name.startswith("/") or "\\" in object_name:
+        raise NotFoundError("非法的对象名")
+    if not object_name.startswith(ALLOWED_OBJECT_PREFIXES):
+        raise NotFoundError("非法的对象名")
     data = download_bytes(object_name)
     if data is None:
         raise NotFoundError("导出文件不存在或已过期")
@@ -194,18 +202,14 @@ def download_export(object_name: str):
 def diagnose(version_id: int, _: DiagnoseRequest, db: Session = Depends(get_db)):
     """AI 诊断（只读）：走 resume-analyzer Agent 的 Harness 管道。"""
     version = _get_version(db, version_id)
-    from app.models.agent import Agent
-
-    agent = db.query(Agent).filter(Agent.name == "resume-analyzer").first()
-    if agent is None:
-        raise NotFoundError("内置 Agent resume-analyzer 不存在")
 
     def executor(ctx, guard):
         result = run_diagnosis(version_id, ctx, guard)
         return {"output": result.model_dump()}
 
-    runtime = AgentRuntime(agent, db)
-    result = runtime.run(
+    result = run_harness_pipeline(
+        db,
+        "resume-analyzer",
         task_description=f"简历诊断 resume_version:{version_id}",
         user_input="请诊断这份简历",
         context={"version_id": version_id},
@@ -220,11 +224,6 @@ def diagnose(version_id: int, _: DiagnoseRequest, db: Session = Depends(get_db))
 def optimize(version_id: int, payload: OptimizeRequest, db: Session = Depends(get_db)):
     """AI 优化建议（逐条可确认）：走 resume-optimizer Agent 的 Harness 管道。"""
     version = _get_version(db, version_id)
-    from app.models.agent import Agent
-
-    agent = db.query(Agent).filter(Agent.name == "resume-optimizer").first()
-    if agent is None:
-        raise NotFoundError("内置 Agent resume-optimizer 不存在")
 
     def executor(ctx, guard):
         result = run_optimize(
@@ -232,8 +231,9 @@ def optimize(version_id: int, payload: OptimizeRequest, db: Session = Depends(ge
         )
         return {"output": result.model_dump()}
 
-    runtime = AgentRuntime(agent, db)
-    result = runtime.run(
+    result = run_harness_pipeline(
+        db,
+        "resume-optimizer",
         task_description=f"简历优化 resume_version:{version_id}",
         user_input="请生成优化建议",
         context={"version_id": version_id, "directions": payload.directions},

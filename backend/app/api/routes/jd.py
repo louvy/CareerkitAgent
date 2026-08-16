@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.agents.business.jd import run_jd_match
-from app.agents.runtime import AgentRuntime
+from app.api.routes.pipeline import run_harness_pipeline
 from app.core.deps import get_db
 from app.core.exceptions import NotFoundError
 from app.models.jd import JD, JDMatch
@@ -73,23 +73,20 @@ def delete_jd(jd_id: int, db: Session = Depends(get_db)):
 @router.post("/jds/{jd_id}/match")
 def run_match(jd_id: int, payload: MatchRequest, db: Session = Depends(get_db)):
     """执行 JD 匹配：走 jd-matcher Agent 的 Harness 管道。"""
-    from app.models.agent import Agent
     from app.models.resume import ResumeVersion
 
     jd = _get_jd(db, jd_id)
     version = db.get(ResumeVersion, payload.resume_version_id)
     if version is None:
         raise NotFoundError(f"简历版本 {payload.resume_version_id} 不存在")
-    agent = db.query(Agent).filter(Agent.name == "jd-matcher").first()
-    if agent is None:
-        raise NotFoundError("内置 Agent jd-matcher 不存在")
 
     def executor(ctx, guard):
         result = run_jd_match(payload.resume_version_id, jd_id, ctx, guard)
         return {"output": result.model_dump()}
 
-    runtime = AgentRuntime(agent, db)
-    result = runtime.run(
+    result = run_harness_pipeline(
+        db,
+        "jd-matcher",
         task_description=f"JD 匹配 jd:{jd_id} resume_version:{payload.resume_version_id}",
         user_input="请执行简历与 JD 的匹配诊断",
         context={"jd_id": jd_id, "resume_version_id": payload.resume_version_id},

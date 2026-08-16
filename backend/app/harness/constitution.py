@@ -115,12 +115,3 @@ def validate_output(text: str, *, source_text: str = "", facts: list[str] | None
 
 def has_blocking_violation(violations: list[ConstitutionViolation]) -> bool:
     return any(v.severity == "error" for v in violations)
-
-
-@dataclass
-class ConstitutionContext:
-    """一次校验的上下文快照，供审计使用。"""
-
-    agent_name: str
-    run_id: str | None
-    violations: list[ConstitutionViolation] = field(default_factory=list)

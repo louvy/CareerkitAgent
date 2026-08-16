@@ -54,7 +54,3 @@ class ClosedLoop:
             raise ClosedLoopError(
                 f"Agent 当前状态为 {status.value}，只有 enabled 状态的 Agent 才能被调度执行。"
             )
-
-    @staticmethod
-    def is_executable(status: AgentStatus) -> bool:
-        return status == AgentStatus.ENABLED

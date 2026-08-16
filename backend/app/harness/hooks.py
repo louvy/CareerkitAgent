@@ -63,19 +63,6 @@ class RunContext:
         }
 
 
-class AgentHooks:
-    """LangGraph 节点级钩子：节点进入/退出时埋点。"""
-
-    def __init__(self, ctx: RunContext):
-        self.ctx = ctx
-
-    def on_node_start(self, node_name: str, input_state: dict) -> None:
-        self.ctx.trace.add_event("node_start", {"node": node_name, "input": redact(input_state)})
-
-    def on_node_end(self, node_name: str, output: dict) -> None:
-        self.ctx.trace.add_event("node_end", {"node": node_name, "output": redact(output)})
-
-
 def run_constitution_check(
     text: str, *, source_text: str = "", facts: list[str] | None = None
 ) -> list[ConstitutionViolation]:

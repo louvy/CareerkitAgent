@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.agents.runtime import run_agent_task
 from app.core.deps import get_db
 from app.core.exceptions import NotFoundError
+from app.core.middleware import request_id_var
 from app.harness.closed_loop import AgentStatus, ClosedLoop
 from app.models.agent import Agent, AgentRun, AgentTrace
 from app.schemas.agent import AgentConfigIn
@@ -89,7 +90,7 @@ def configure_agent(agent_id: int, payload: AgentConfigIn, db: Session = Depends
     agent.config = config
     agent.status = AgentStatus.CONFIGURED.value
     db.commit()
-    audit("agent.config", f"agent:{agent.name}", {"agent_id": agent_id})
+    audit("agent.config", f"agent:{agent.name}", {"agent_id": agent_id}, db=db)
     return _agent_dict(agent)
 
 
@@ -101,7 +102,7 @@ def review_agent(agent_id: int, db: Session = Depends(get_db)):
     ClosedLoop.transition(status, AgentStatus.REVIEWED)
     agent.status = AgentStatus.REVIEWED.value
     db.commit()
-    audit("agent.review", f"agent:{agent.name}", {"agent_id": agent_id})
+    audit("agent.review", f"agent:{agent.name}", {"agent_id": agent_id}, db=db)
     return _agent_dict(agent)
 
 
@@ -113,7 +114,7 @@ def enable_agent(agent_id: int, db: Session = Depends(get_db)):
     ClosedLoop.transition(status, AgentStatus.ENABLED)
     agent.status = AgentStatus.ENABLED.value
     db.commit()
-    audit("agent.enable", f"agent:{agent.name}", {"agent_id": agent_id})
+    audit("agent.enable", f"agent:{agent.name}", {"agent_id": agent_id}, db=db)
     return _agent_dict(agent)
 
 
@@ -125,7 +126,7 @@ def disable_agent(agent_id: int, db: Session = Depends(get_db)):
     ClosedLoop.transition(status, AgentStatus.DISABLED)
     agent.status = AgentStatus.DISABLED.value
     db.commit()
-    audit("agent.disable", f"agent:{agent.name}", {"agent_id": agent_id})
+    audit("agent.disable", f"agent:{agent.name}", {"agent_id": agent_id}, db=db)
     return _agent_dict(agent)
 
 
@@ -143,6 +144,7 @@ def run_agent(agent_id: int, payload: dict, db: Session = Depends(get_db)):
         source_text=str(context.get("source_text", "")),
         with_quality_gate=payload.get("with_quality_gate", True),
         call_type=str(payload.get("call_type", "invoke")),
+        request_id=request_id_var.get(),
     )
     return result
 

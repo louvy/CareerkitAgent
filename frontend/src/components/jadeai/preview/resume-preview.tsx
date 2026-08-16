@@ -4,124 +4,78 @@ import * as React from 'react';
 import { useId } from 'react';
 import type { Resume, ThemeConfig } from '@/types/resume';
 import { BACKGROUND_TEMPLATES } from '@/lib/constants';
-import { ClassicTemplate } from './templates/classic';
-import { ModernTemplate } from './templates/modern';
-import { MinimalTemplate } from './templates/minimal';
-import { ProfessionalTemplate } from './templates/professional';
-import { TwoColumnTemplate } from './templates/two-column';
-import { CreativeTemplate } from './templates/creative';
-import { AtsTemplate } from './templates/ats';
-import { AcademicTemplate } from './templates/academic';
-import { ElegantTemplate } from './templates/elegant';
-import { ExecutiveTemplate } from './templates/executive';
-import { DeveloperTemplate } from './templates/developer';
-import { DesignerTemplate } from './templates/designer';
-import { StartupTemplate } from './templates/startup';
-import { FormalTemplate } from './templates/formal';
-import { InfographicTemplate } from './templates/infographic';
-import { CompactTemplate } from './templates/compact';
-import { EuroTemplate } from './templates/euro';
-import { CleanTemplate } from './templates/clean';
-import { BoldTemplate } from './templates/bold';
-import { TimelineTemplate } from './templates/timeline';
-// Batch 1: Industry/Professional
-import { NordicTemplate } from './templates/nordic';
-import { CorporateTemplate } from './templates/corporate';
-import { ConsultantTemplate } from './templates/consultant';
-import { FinanceTemplate } from './templates/finance';
-import { MedicalTemplate } from './templates/medical';
-// Batch 2: Modern/Tech
-import { GradientTemplate } from './templates/gradient';
-import { MetroTemplate } from './templates/metro';
-import { MaterialTemplate } from './templates/material';
-import { CoderTemplate } from './templates/coder';
-import { BlocksTemplate } from './templates/blocks';
-// Batch 3: Creative/Artistic
-import { MagazineTemplate } from './templates/magazine';
-import { ArtisticTemplate } from './templates/artistic';
-import { RetroTemplate } from './templates/retro';
-import { NeonTemplate } from './templates/neon';
-import { WatercolorTemplate } from './templates/watercolor';
-// Batch 4: Style/Culture
-import { SwissTemplate } from './templates/swiss';
-import { JapaneseTemplate } from './templates/japanese';
-import { BerlinTemplate } from './templates/berlin';
-import { LuxeTemplate } from './templates/luxe';
-import { RoseTemplate } from './templates/rose';
-// Batch 5: Specialized
-import { ArchitectTemplate } from './templates/architect';
-import { LegalTemplate } from './templates/legal';
-import { TeacherTemplate } from './templates/teacher';
-import { ScientistTemplate } from './templates/scientist';
-import { EngineerTemplate } from './templates/engineer';
-// Batch 6: Layout Variants
-import { SidebarTemplate } from './templates/sidebar';
-import { CardTemplate } from './templates/card';
-import { ZigzagTemplate } from './templates/zigzag';
-import { RibbonTemplate } from './templates/ribbon';
-import { MosaicTemplate } from './templates/mosaic';
+import dynamic from 'next/dynamic';
+
+/**
+ * 模板按需懒加载：50 个模板各自通过 next/dynamic 单独 code-split，
+ * 仅当用户切换到对应模板时才加载其 JS，避免全部打进首屏包。
+ * 模板内部的视觉/交互逻辑完全不变，仅把静态 import 改为动态 import。
+ */
+const templateLoading = () => (
+  <div className="mx-auto max-w-[210mm] bg-white shadow-lg" style={{ minHeight: '297mm' }} />
+);
 
 interface ResumePreviewProps {
   resume: Resume;
 }
 
 const templateMap: Record<string, React.ComponentType<{ resume: Resume }>> = {
-  classic: ClassicTemplate,
-  modern: ModernTemplate,
-  minimal: MinimalTemplate,
-  professional: ProfessionalTemplate,
-  'two-column': TwoColumnTemplate,
-  creative: CreativeTemplate,
-  ats: AtsTemplate,
-  academic: AcademicTemplate,
-  elegant: ElegantTemplate,
-  executive: ExecutiveTemplate,
-  developer: DeveloperTemplate,
-  designer: DesignerTemplate,
-  startup: StartupTemplate,
-  formal: FormalTemplate,
-  infographic: InfographicTemplate,
-  compact: CompactTemplate,
-  euro: EuroTemplate,
-  clean: CleanTemplate,
-  bold: BoldTemplate,
-  timeline: TimelineTemplate,
+  classic: dynamic<{ resume: Resume }>(() => import('./templates/classic').then((m) => m.ClassicTemplate), { loading: templateLoading }),
+  modern: dynamic<{ resume: Resume }>(() => import('./templates/modern').then((m) => m.ModernTemplate), { loading: templateLoading }),
+  minimal: dynamic<{ resume: Resume }>(() => import('./templates/minimal').then((m) => m.MinimalTemplate), { loading: templateLoading }),
+  professional: dynamic<{ resume: Resume }>(() => import('./templates/professional').then((m) => m.ProfessionalTemplate), { loading: templateLoading }),
+  'two-column': dynamic<{ resume: Resume }>(() => import('./templates/two-column').then((m) => m.TwoColumnTemplate), { loading: templateLoading }),
+  creative: dynamic<{ resume: Resume }>(() => import('./templates/creative').then((m) => m.CreativeTemplate), { loading: templateLoading }),
+  ats: dynamic<{ resume: Resume }>(() => import('./templates/ats').then((m) => m.AtsTemplate), { loading: templateLoading }),
+  academic: dynamic<{ resume: Resume }>(() => import('./templates/academic').then((m) => m.AcademicTemplate), { loading: templateLoading }),
+  elegant: dynamic<{ resume: Resume }>(() => import('./templates/elegant').then((m) => m.ElegantTemplate), { loading: templateLoading }),
+  executive: dynamic<{ resume: Resume }>(() => import('./templates/executive').then((m) => m.ExecutiveTemplate), { loading: templateLoading }),
+  developer: dynamic<{ resume: Resume }>(() => import('./templates/developer').then((m) => m.DeveloperTemplate), { loading: templateLoading }),
+  designer: dynamic<{ resume: Resume }>(() => import('./templates/designer').then((m) => m.DesignerTemplate), { loading: templateLoading }),
+  startup: dynamic<{ resume: Resume }>(() => import('./templates/startup').then((m) => m.StartupTemplate), { loading: templateLoading }),
+  formal: dynamic<{ resume: Resume }>(() => import('./templates/formal').then((m) => m.FormalTemplate), { loading: templateLoading }),
+  infographic: dynamic<{ resume: Resume }>(() => import('./templates/infographic').then((m) => m.InfographicTemplate), { loading: templateLoading }),
+  compact: dynamic<{ resume: Resume }>(() => import('./templates/compact').then((m) => m.CompactTemplate), { loading: templateLoading }),
+  euro: dynamic<{ resume: Resume }>(() => import('./templates/euro').then((m) => m.EuroTemplate), { loading: templateLoading }),
+  clean: dynamic<{ resume: Resume }>(() => import('./templates/clean').then((m) => m.CleanTemplate), { loading: templateLoading }),
+  bold: dynamic<{ resume: Resume }>(() => import('./templates/bold').then((m) => m.BoldTemplate), { loading: templateLoading }),
+  timeline: dynamic<{ resume: Resume }>(() => import('./templates/timeline').then((m) => m.TimelineTemplate), { loading: templateLoading }),
   // Batch 1
-  nordic: NordicTemplate,
-  corporate: CorporateTemplate,
-  consultant: ConsultantTemplate,
-  finance: FinanceTemplate,
-  medical: MedicalTemplate,
+  nordic: dynamic<{ resume: Resume }>(() => import('./templates/nordic').then((m) => m.NordicTemplate), { loading: templateLoading }),
+  corporate: dynamic<{ resume: Resume }>(() => import('./templates/corporate').then((m) => m.CorporateTemplate), { loading: templateLoading }),
+  consultant: dynamic<{ resume: Resume }>(() => import('./templates/consultant').then((m) => m.ConsultantTemplate), { loading: templateLoading }),
+  finance: dynamic<{ resume: Resume }>(() => import('./templates/finance').then((m) => m.FinanceTemplate), { loading: templateLoading }),
+  medical: dynamic<{ resume: Resume }>(() => import('./templates/medical').then((m) => m.MedicalTemplate), { loading: templateLoading }),
   // Batch 2
-  gradient: GradientTemplate,
-  metro: MetroTemplate,
-  material: MaterialTemplate,
-  coder: CoderTemplate,
-  blocks: BlocksTemplate,
+  gradient: dynamic<{ resume: Resume }>(() => import('./templates/gradient').then((m) => m.GradientTemplate), { loading: templateLoading }),
+  metro: dynamic<{ resume: Resume }>(() => import('./templates/metro').then((m) => m.MetroTemplate), { loading: templateLoading }),
+  material: dynamic<{ resume: Resume }>(() => import('./templates/material').then((m) => m.MaterialTemplate), { loading: templateLoading }),
+  coder: dynamic<{ resume: Resume }>(() => import('./templates/coder').then((m) => m.CoderTemplate), { loading: templateLoading }),
+  blocks: dynamic<{ resume: Resume }>(() => import('./templates/blocks').then((m) => m.BlocksTemplate), { loading: templateLoading }),
   // Batch 3
-  magazine: MagazineTemplate,
-  artistic: ArtisticTemplate,
-  retro: RetroTemplate,
-  neon: NeonTemplate,
-  watercolor: WatercolorTemplate,
+  magazine: dynamic<{ resume: Resume }>(() => import('./templates/magazine').then((m) => m.MagazineTemplate), { loading: templateLoading }),
+  artistic: dynamic<{ resume: Resume }>(() => import('./templates/artistic').then((m) => m.ArtisticTemplate), { loading: templateLoading }),
+  retro: dynamic<{ resume: Resume }>(() => import('./templates/retro').then((m) => m.RetroTemplate), { loading: templateLoading }),
+  neon: dynamic<{ resume: Resume }>(() => import('./templates/neon').then((m) => m.NeonTemplate), { loading: templateLoading }),
+  watercolor: dynamic<{ resume: Resume }>(() => import('./templates/watercolor').then((m) => m.WatercolorTemplate), { loading: templateLoading }),
   // Batch 4
-  swiss: SwissTemplate,
-  japanese: JapaneseTemplate,
-  berlin: BerlinTemplate,
-  luxe: LuxeTemplate,
-  rose: RoseTemplate,
+  swiss: dynamic<{ resume: Resume }>(() => import('./templates/swiss').then((m) => m.SwissTemplate), { loading: templateLoading }),
+  japanese: dynamic<{ resume: Resume }>(() => import('./templates/japanese').then((m) => m.JapaneseTemplate), { loading: templateLoading }),
+  berlin: dynamic<{ resume: Resume }>(() => import('./templates/berlin').then((m) => m.BerlinTemplate), { loading: templateLoading }),
+  luxe: dynamic<{ resume: Resume }>(() => import('./templates/luxe').then((m) => m.LuxeTemplate), { loading: templateLoading }),
+  rose: dynamic<{ resume: Resume }>(() => import('./templates/rose').then((m) => m.RoseTemplate), { loading: templateLoading }),
   // Batch 5
-  architect: ArchitectTemplate,
-  legal: LegalTemplate,
-  teacher: TeacherTemplate,
-  scientist: ScientistTemplate,
-  engineer: EngineerTemplate,
+  architect: dynamic<{ resume: Resume }>(() => import('./templates/architect').then((m) => m.ArchitectTemplate), { loading: templateLoading }),
+  legal: dynamic<{ resume: Resume }>(() => import('./templates/legal').then((m) => m.LegalTemplate), { loading: templateLoading }),
+  teacher: dynamic<{ resume: Resume }>(() => import('./templates/teacher').then((m) => m.TeacherTemplate), { loading: templateLoading }),
+  scientist: dynamic<{ resume: Resume }>(() => import('./templates/scientist').then((m) => m.ScientistTemplate), { loading: templateLoading }),
+  engineer: dynamic<{ resume: Resume }>(() => import('./templates/engineer').then((m) => m.EngineerTemplate), { loading: templateLoading }),
   // Batch 6
-  sidebar: SidebarTemplate,
-  card: CardTemplate,
-  zigzag: ZigzagTemplate,
-  ribbon: RibbonTemplate,
-  mosaic: MosaicTemplate,
+  sidebar: dynamic<{ resume: Resume }>(() => import('./templates/sidebar').then((m) => m.SidebarTemplate), { loading: templateLoading }),
+  card: dynamic<{ resume: Resume }>(() => import('./templates/card').then((m) => m.CardTemplate), { loading: templateLoading }),
+  zigzag: dynamic<{ resume: Resume }>(() => import('./templates/zigzag').then((m) => m.ZigzagTemplate), { loading: templateLoading }),
+  ribbon: dynamic<{ resume: Resume }>(() => import('./templates/ribbon').then((m) => m.RibbonTemplate), { loading: templateLoading }),
+  mosaic: dynamic<{ resume: Resume }>(() => import('./templates/mosaic').then((m) => m.MosaicTemplate), { loading: templateLoading }),
 };
 
 const FONT_SIZE_SCALE: Record<string, { body: string; h1: string; h2: string; h3: string }> = {
@@ -238,7 +192,7 @@ function buildThemeCSS(scopeId: string, theme: ThemeConfig, template: string): s
 }
 
 export function ResumePreview({ resume }: ResumePreviewProps) {
-  const Template = templateMap[resume.template] || ClassicTemplate;
+  const Template = templateMap[resume.template] || templateMap.classic;
   const scopeId = useId();
   const theme: ThemeConfig = { ...DEFAULT_THEME, ...(resume.themeConfig || {}) };
 

@@ -1,0 +1,40 @@
+# ===== 环境变量与密钥 =====
+.env
+.env.local
+.env.*.local
+*.pem
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+htmlcov/
+.coverage
+
+# ===== Node / Next.js =====
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+
+# ===== Docker / 日志 =====
+*.log
+docker-compose.override.yml

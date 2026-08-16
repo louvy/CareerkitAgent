@@ -1,0 +1,176 @@
+﻿'use client';
+
+import { useTranslations } from '@/components/jadeai/lib/i18n';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Undo2, Redo2, Download, Upload, Palette, Save, MoreHorizontal, Sparkles } from 'lucide-react';
+import { Button } from '@/components/jadeai/ui/button';
+import { Separator } from '@/components/jadeai/ui/separator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/jadeai/ui/dropdown-menu";
+import { useEditorStore } from '@/components/jadeai/editor/editor-store';
+import { useResumeStore } from '@/components/jadeai/editor/resume-store';
+import { useUIStore } from '@/components/jadeai/editor/ui-store';
+import { useSettingsStore } from '@/components/jadeai/editor/settings-store';
+
+interface EditorToolbarProps {}
+
+export function EditorToolbar({}: EditorToolbarProps) {
+  const t = useTranslations('editor.toolbar');
+  const router = useRouter();
+  const { toggleThemeEditor, showThemeEditor, undo, redo, undoStack, redoStack } = useEditorStore();
+  const { isSaving, isDirty, currentResume, reorderSections, save } = useResumeStore();
+  const { openModal } = useUIStore();
+  const autoSave = useSettingsStore((s) => s.autoSave);
+
+  const handleUndo = () => {
+    const snapshot = undo();
+    if (snapshot) {
+      reorderSections(snapshot.sections);
+    }
+  };
+
+  const handleRedo = () => {
+    const snapshot = redo();
+    if (snapshot) {
+      reorderSections(snapshot.sections);
+    }
+  };
+
+  return (
+    <div className="flex h-12 items-center justify-between gap-2 border-b bg-white px-2 sm:px-3 dark:bg-background dark:border-zinc-800">
+      <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => router.push('/resume')}
+          className="h-8 w-8 shrink-0 cursor-pointer text-zinc-600"
+          title="返回"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <Separator orientation="vertical" className="hidden h-6 sm:block" />
+        <span className="min-w-0 max-w-[8rem] truncate text-sm font-medium text-zinc-900 sm:max-w-48 dark:text-zinc-100">
+          {currentResume?.title || ''}
+        </span>
+        <span className="hidden text-xs text-zinc-400 sm:inline">
+          {isSaving ? t('saving') : isDirty ? (autoSave ? '' : t('unsaved')) : t('autoSaved')}
+        </span>
+        {!autoSave && isDirty && !isSaving && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => save()}
+            className="cursor-pointer gap-1 text-brand hover:text-brand hover:bg-brand-muted"
+          >
+            <Save className="h-3.5 w-3.5" />
+            <span className="text-xs">{t('save')}</span>
+          </Button>
+        )}
+      </div>
+
+      <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+        {/* Primary: undo/redo — always visible */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleUndo}
+          disabled={undoStack.length === 0}
+          className="h-8 w-8 cursor-pointer"
+          title={t('undo')}
+        >
+          <Undo2 className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleRedo}
+          disabled={redoStack.length === 0}
+          className="h-8 w-8 cursor-pointer"
+          title={t('redo')}
+        >
+          <Redo2 className="h-4 w-4" />
+        </Button>
+        <Separator orientation="vertical" className="hidden h-6 sm:block" />
+
+        {/* Desktop: export / import / AI */}
+        <div className="hidden items-center gap-1 md:flex">
+          <Button
+            data-tour="ai-assistant"
+            variant="ghost"
+            size="sm"
+            onClick={() => openModal('ai-assistant')}
+            className="cursor-pointer"
+            title={t('aiAssistant')}
+          >
+            <Sparkles className="h-4 w-4 text-brand" />
+            <span className="ml-1 text-xs hidden sm:inline">{t('aiAssistant')}</span>
+          </Button>
+          <Button
+            data-tour="export"
+            variant="ghost"
+            size="sm"
+            onClick={() => openModal('export')}
+            className="cursor-pointer"
+            title={t('exportPdf')}
+          >
+            <Download className="h-4 w-4" />
+            <span className="ml-1 text-xs hidden sm:inline">{t('exportPdf')}</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => openModal('import')}
+            className="cursor-pointer"
+            title={t('import')}
+          >
+            <Upload className="h-4 w-4" />
+            <span className="ml-1 text-xs hidden sm:inline">{t('import')}</span>
+          </Button>
+        </div>
+
+        {/* Mobile: "more" dropdown */}
+        <div className="md:hidden">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => openModal('ai-assistant')}>
+                <Sparkles className="mr-2 h-4 w-4" />
+                {t('aiAssistant')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openModal('export')}>
+                <Download className="mr-2 h-4 w-4" />
+                {t('exportPdf')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openModal('import')}>
+                <Upload className="mr-2 h-4 w-4" />
+                {t('import')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Primary: theme toggle — always visible */}
+        <Separator orientation="vertical" className="hidden h-6 sm:block" />
+        <Button
+          data-tour="theme"
+          variant={showThemeEditor ? 'secondary' : 'ghost'}
+          size="icon"
+          onClick={toggleThemeEditor}
+          className="h-8 w-8 cursor-pointer sm:w-auto sm:px-3"
+          title={t('theme')}
+        >
+          <Palette className="h-4 w-4" />
+          <span className="ml-1 hidden text-xs sm:inline">{t('theme')}</span>
+        </Button>
+      </div>
+    </div>
+  );
+}

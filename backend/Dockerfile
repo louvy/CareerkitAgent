@@ -2,7 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /srv
 
-RUN pip install --no-cache-dir uv
+#RUN pip install --no-cache-dir uv
+# 使用清华镜像源安装 uv
+RUN pip install --no-cache-dir uv -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY pyproject.toml ./
 COPY app ./app

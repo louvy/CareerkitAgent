@@ -1,5 +1,7 @@
 # CareerKitAgent · AI 求职入职工作台
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 基于 **Harness 编程模式** 的 AI 求职入职工作台：简历诊断/优化、JD 匹配、面试刷题与模拟面试，全部 Agent 动作受 **可观测性 / 治理与安全 / 验证与质量** 三支柱约束。
 
 
@@ -159,3 +161,23 @@ CareerkitAgent/
 - LLM 与 Embedding 均走 OpenAI 兼容接口（Embedding 维度由所选模型决定，知识库可指定 embedding 模型）；
 - 知识库上传目前支持 txt/md 文本格式；
 - 不含：申请跟踪看板、求职信生成、多用户协作。
+
+## License
+
+本项目基于 [Apache License 2.0](LICENSE) 开源，版权所有 © 2026 louvy。
+
+```
+Copyright 2026 louvy
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```

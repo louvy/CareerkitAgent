@@ -7,6 +7,7 @@
 import io
 import logging
 import re
+import time
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel, Field, field_validator
@@ -14,7 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db
-from app.core.exceptions import EmbeddingDimensionError, NotFoundError
+from app.core.exceptions import EmbeddingDimensionError, NotFoundError, ValidationError
 from app.models.knowledge import EMBEDDING_DIM, KnowledgeBase, KnowledgeChunk
 from app.services.embedding import embed_texts
 from app.services.retriever import hybrid_search
@@ -95,6 +96,10 @@ class SearchRequest(BaseModel):
     top_k: int = 5
 
 
+class UrlImportRequest(BaseModel):
+    url: str = Field(min_length=1, description="待抓取的网页 URL（仅 http/https，含 SSRF 防护）")
+
+
 def _get_kb(db: Session, kb_id: int) -> KnowledgeBase:
     kb = db.get(KnowledgeBase, kb_id)
     if kb is None:
@@ -118,6 +123,35 @@ def _kb_dict(kb: KnowledgeBase, chunk_count: int = 0) -> dict:
         "chunk_count": chunk_count,
         "created_at": kb.created_at,
     }
+
+
+def _index_document(db: Session, kb: KnowledgeBase, text: str, source_file: str, title: str) -> int:
+    """切块 → 向量化 → 入库（上传与 URL 导入共用）。
+
+    维度校验：所选 embedding 模型维度必须与向量列一致，否则入库会失败或静默丢向量。
+    """
+    chunks = split_text(text, kb.chunk_strategy, kb.chunk_size, kb.chunk_overlap)
+    if not chunks:
+        return 0
+    vectors = embed_texts(chunks, embedding_model_id=kb.embedding_model_id) if chunks else []
+    if vectors and vectors[0] and len(vectors[0]) != EMBEDDING_DIM:
+        raise EmbeddingDimensionError(
+            f"embedding 模型维度为 {len(vectors[0])}，与知识库向量列维度 {EMBEDDING_DIM} 不一致；"
+            f"请统一 embedding 模型维度（或在 config 调整 embedding_dim 并重建知识库）。"
+        )
+    for idx, (chunk, vector) in enumerate(zip(chunks, vectors, strict=False)):
+        db.add(
+            KnowledgeChunk(
+                knowledge_base_id=kb.id,
+                source_file=source_file,
+                chunk_index=idx,
+                content=chunk,
+                embedding=vector if vector else None,
+                doc_meta={"title": title, "chunk_index": idx},
+            )
+        )
+    db.commit()
+    return len(chunks)
 
 
 @router.get("/knowledge-bases")
@@ -194,45 +228,46 @@ def delete_kb(kb_id: int, db: Session = Depends(get_db)):
 
 @router.post("/knowledge-bases/{kb_id}/upload")
 def upload_documents(kb_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
-    """上传文档（txt/md），按知识库切块配置分片，用指定 embedding 模型向量化入库。
+    """上传文档（txt/md/pdf），按知识库切块配置分片，用指定 embedding 模型向量化入库。
 
     使用同步路由：FastAPI 会将同步处理函数在线程池中执行，避免阻塞 embedding 调用卡住事件循环。
     """
+    from app.services.doc_extract import extract_text
+
     kb = _get_kb(db, kb_id)
     results = []
     for file in files:
         data = file.file.read()
-        text = data.decode("utf-8", errors="ignore")
+        text = extract_text(data, file.filename or "")
         # 原文存 MinIO（知识库原始文档）
         obj_name = upload_fileobj(
             "knowledge", file.filename or "doc.txt", io.BytesIO(data), len(data),
             file.content_type or "text/plain",
         )
-        chunks = split_text(text, kb.chunk_strategy, kb.chunk_size, kb.chunk_overlap)
-        if not chunks:
-            results.append({"file": file.filename, "chunks": 0, "message": "空文档"})
-            continue
-        vectors = embed_texts(chunks, embedding_model_id=kb.embedding_model_id) if chunks else []
-        # 维度校验：所选 embedding 模型维度必须与向量列一致，否则入库会失败或静默丢向量
-        if vectors and vectors[0] and len(vectors[0]) != EMBEDDING_DIM:
-            raise EmbeddingDimensionError(
-                f"embedding 模型维度为 {len(vectors[0])}，与知识库向量列维度 {EMBEDDING_DIM} 不一致；"
-                f"请统一 embedding 模型维度（或在 config 调整 embedding_dim 并重建知识库）。"
-            )
-        for idx, (chunk, vector) in enumerate(zip(chunks, vectors, strict=False)):
-            db.add(
-                KnowledgeChunk(
-                    knowledge_base_id=kb_id,
-                    source_file=obj_name,
-                    chunk_index=idx,
-                    content=chunk,
-                    embedding=vector if vector else None,
-                    doc_meta={"title": file.filename, "chunk_index": idx},
-                )
-            )
-        db.commit()
-        results.append({"file": file.filename, "chunks": len(chunks), "message": "已入库"})
+        n = _index_document(db, kb, text, obj_name, file.filename or "doc")
+        results.append({"file": file.filename, "chunks": n, "message": "已入库" if n else "空文档"})
     return {"results": results}
+
+
+@router.post("/knowledge-bases/{kb_id}/import-url")
+def import_url(kb_id: int, payload: UrlImportRequest, db: Session = Depends(get_db)):
+    """从网页 URL 抓取正文并入库（含 SSRF 防护；仅 http/https，拒绝内网/保留地址）。"""
+    from app.services.doc_extract import fetch_url_text
+
+    kb = _get_kb(db, kb_id)
+    try:
+        text = fetch_url_text(payload.url)
+    except ValueError as exc:
+        raise ValidationError(str(exc))
+    if not text.strip():
+        raise ValidationError("网页未抽取到文本")
+    # 抽取文本作为来源存档（无原始二进制）
+    stamp = int(time.time())
+    obj_name = upload_fileobj(
+        "knowledge", f"url-{kb_id}-{stamp}.txt", io.BytesIO(text.encode("utf-8")), len(text), "text/plain"
+    )
+    n = _index_document(db, kb, text, obj_name, payload.url)
+    return {"url": payload.url, "chunks": n, "message": "已入库" if n else "空文档"}
 
 
 @router.post("/knowledge/search")

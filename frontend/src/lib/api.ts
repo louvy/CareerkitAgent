@@ -155,6 +155,11 @@ export const api = {
     files.forEach((f) => form.append("files", f));
     return request<{ results: unknown[] }>(`/knowledge-bases/${kbId}/upload`, { method: "POST", body: form, headers: {} });
   },
+  importUrl: (kbId: number, url: string) =>
+    request<{ url: string; chunks: number; message: string }>(`/knowledge-bases/${kbId}/import-url`, {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
 
   // 模型管理
   listModels: (category?: string) =>

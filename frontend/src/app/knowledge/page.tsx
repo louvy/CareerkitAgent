@@ -28,6 +28,8 @@ export default function KnowledgePage() {
   });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState<number | null>(null);
+  const [importing, setImporting] = useState<number | null>(null);
+  const [urlInputs, setUrlInputs] = useState<Record<number, string>>({});
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   // 切块预览
@@ -131,6 +133,22 @@ export default function KnowledgePage() {
     }
   };
 
+  const importUrl = async (kbId: number, url: string) => {
+    const u = url.trim();
+    if (!u) return;
+    setImporting(kbId);
+    try {
+      const r = await api.importUrl(kbId, u);
+      alert(`网页导入完成：${r.chunks} 分片`);
+      setUrlInputs((m) => ({ ...m, [kbId]: "" }));
+      load();
+    } catch (e: unknown) {
+      alert((e as Error).message);
+    } finally {
+      setImporting(null);
+    }
+  };
+
   const runPreview = async () => {
     if (!previewText.trim()) return;
     setPreviewing(true);
@@ -164,7 +182,7 @@ export default function KnowledgePage() {
         <button className="btn-primary" onClick={openNew} disabled={editing !== null}>
           + 新建知识库
         </button>
-        <span className="text-xs text-slate-400">支持 .txt / .md，上传后按知识库配置自动切块向量化</span>
+        <span className="text-xs text-slate-400">支持 .txt / .md / .pdf，也可粘贴网页 URL 导入；上传后按知识库配置自动切块向量化</span>
       </div>
 
       {/* 新建 / 编辑表单 */}
@@ -289,7 +307,7 @@ export default function KnowledgePage() {
                     ref={fileRef}
                     type="file"
                     multiple
-                    accept=".txt,.md"
+                    accept=".txt,.md,.pdf"
                     className="hidden"
                     onChange={(e) => upload(kb.id, e.target.files)}
                   />
@@ -303,6 +321,23 @@ export default function KnowledgePage() {
                     删除
                   </button>
                 </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  type="url"
+                  placeholder="粘贴网页 URL 导入（如 https://...）"
+                  className="input text-xs"
+                  value={urlInputs[kb.id] ?? ""}
+                  onChange={(e) => setUrlInputs((m) => ({ ...m, [kb.id]: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && importUrl(kb.id, urlInputs[kb.id] ?? "")}
+                />
+                <button
+                  className="btn-secondary text-xs shrink-0"
+                  disabled={importing === kb.id || !(urlInputs[kb.id] || "").trim()}
+                  onClick={() => importUrl(kb.id, urlInputs[kb.id] ?? "")}
+                >
+                  {importing === kb.id ? "抓取中…" : "导入网页"}
+                </button>
               </div>
             </div>
           ))}

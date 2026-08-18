@@ -76,7 +76,7 @@ def _resolve_chat_provider(model_override: str | None = None) -> tuple[str, str,
             return result
     # 回退旧设置
     base_url = get_setting(SETTING_BASE_URL) or ""
-    api_key = decrypt_value(get_setting(SETTING_API_KEY)) if get_setting(SETTING_API_KEY) else ""
+    api_key = get_setting(SETTING_API_KEY) or ""
     model = get_setting(SETTING_MODEL) or ""
     result = (base_url, api_key, model)
     _provider_cache[cache_key] = (now, result)

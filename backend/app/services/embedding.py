@@ -57,7 +57,7 @@ def _resolve_embedding_provider(embedding_model_id: int | None = None) -> tuple[
     from app.services.llm import SETTING_API_KEY, SETTING_BASE_URL
 
     base_url = get_setting(SETTING_BASE_URL) or ""
-    api_key = decrypt_value(get_setting(SETTING_API_KEY)) if get_setting(SETTING_API_KEY) else ""
+    api_key = get_setting(SETTING_API_KEY) or ""
     result = (base_url, api_key, get_embedding_model())
     _embed_provider_cache[cache_key] = (now, result)
     return result

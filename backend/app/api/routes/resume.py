@@ -4,7 +4,7 @@ import copy
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -115,6 +115,33 @@ def get_resume(resume_id: int, db: Session = Depends(get_db)):
             for v in resume.versions
         ],
     }
+
+
+@router.post("/resumes/import")
+def import_resume(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """从 PDF/Word/txt/md 导入简历：抽取文本 → LLM 结构化 → 新建简历与首版本。
+
+    属「数据录入」而非「Agent 生成建议」：经宪法注入保证不虚构，写 audit，
+    但不走质量门禁 / agent_traces（非 Agent 运行）。
+    """
+    from app.agents.business.resume_import import run_import
+    from app.core.exceptions import ValidationError
+    from app.services.audit import audit
+    from app.services.doc_extract import extract_text
+
+    data = file.file.read()
+    text = extract_text(data, file.filename or "")
+    if not text.strip():
+        raise ValidationError("无法从文件中抽取到文本，请确认文件内容或格式。")
+
+    content = run_import(text).model_dump()
+    name = (file.filename or "导入的简历").rsplit(".", 1)[0]
+    resume = Resume(name=name)
+    resume.versions.append(ResumeVersion(label="主版本", version_type="general", content=content))
+    db.add(resume)
+    db.commit()
+    audit("resume.import", f"resume:{resume.id}", {"filename": file.filename}, db=db)
+    return {"id": resume.id, "version_id": resume.versions[0].id, "name": name}
 
 
 @router.delete("/resumes/{resume_id}")

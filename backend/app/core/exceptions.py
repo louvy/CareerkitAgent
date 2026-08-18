@@ -60,6 +60,13 @@ class EmbeddingDimensionError(HarnessError):
         super().__init__(message, code="EMBEDDING_DIM_MISMATCH", status_code=400)
 
 
+class ValidationError(HarnessError):
+    """业务入参校验失败（如导入文件无文本）。"""
+
+    def __init__(self, message: str):
+        super().__init__(message, code="VALIDATION_ERROR", status_code=400)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(HarnessError)
     async def harness_error_handler(_: Request, exc: HarnessError) -> JSONResponse:

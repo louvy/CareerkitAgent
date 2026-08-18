@@ -64,6 +64,15 @@ export const api = {
   createResume: (payload: { name: string; label?: string; content?: unknown }) =>
     request<{ id: number; name: string }>("/resumes", { method: "POST", body: JSON.stringify(payload) }),
   deleteResume: (id: number) => request(`/resumes/${id}`, { method: "DELETE" }),
+  importResume: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ id: number; version_id: number; name: string }>("/resumes/import", {
+      method: "POST",
+      body: form,
+      headers: {},
+    });
+  },
   createVersion: (resumeId: number, payload: { label: string; version_type?: string }) =>
     request<{ id: number; label: string }>(`/resumes/${resumeId}/versions`, { method: "POST", body: JSON.stringify(payload) }),
   updateVersion: (versionId: number, payload: Partial<{ label: string; content: unknown; notes: string }>) =>

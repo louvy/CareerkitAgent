@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { ResumeItem } from "@/types";
@@ -11,6 +11,8 @@ export default function ResumeListPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -48,6 +50,21 @@ export default function ResumeListPage() {
     }
   };
 
+  const importResumeFile = async (files: FileList | null) => {
+    const file = files && files[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const r = await api.importResume(file);
+      window.location.href = `/resume/${r.id}`;
+    } catch (e: unknown) {
+      alert((e as Error).message);
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
   return (
     <div className="p-8 max-w-5xl">
       <header className="flex items-center justify-between mb-8">
@@ -55,9 +72,21 @@ export default function ResumeListPage() {
           <h1 className="text-2xl font-semibold text-slate-800">简历库</h1>
           <p className="text-sm text-slate-500 mt-1">结构化简历与多版本管理，AI 诊断/优化基于版本快照，原版始终保留</p>
         </div>
-        <button className="btn-primary" onClick={() => setShowCreate(true)}>
-          ＋ 新建简历
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="btn-primary" onClick={() => setShowCreate(true)}>
+            ＋ 新建简历
+          </button>
+          <button className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={importing}>
+            {importing ? "导入中…" : "导入简历"}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf,.docx,.txt,.md"
+            className="hidden"
+            onChange={(e) => importResumeFile(e.target.files)}
+          />
+        </div>
       </header>
 
       {showCreate && (

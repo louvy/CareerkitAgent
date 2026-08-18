@@ -90,6 +90,20 @@ class AgentRuntime:
 
     # ---- 可观测性：落库 ----
 
+    @staticmethod
+    def _build_review_feedback(verdict: ReviewVerdict | None) -> str:
+        """把 reviewer 结论（issues/suggestions）拼成可注入重生产提示词的反馈段。"""
+        if verdict is None:
+            return ""
+        parts: list[str] = []
+        if verdict.issues:
+            parts.append("待修复问题：\n- " + "\n- ".join(verdict.issues))
+        if verdict.suggestions:
+            parts.append("改进建议：\n- " + "\n- ".join(verdict.suggestions))
+        if not parts:
+            return ""
+        return "## 上次评审反馈（必须逐条处理后再输出）\n\n" + "\n\n".join(parts)
+
     def _persist(
         self, ctx: RunContext, output_text: str, task_description: str, status: str, gate: dict, error: str | None = None, call_type: str = "invoke"
     ) -> AgentRun:
@@ -136,13 +150,18 @@ class AgentRuntime:
         guard = self._build_guard()
 
         # 生成阶段：定义为可重复调用的闭包，供质量门禁 RETRY 重新生成
-        def _generate() -> dict:
+        def _generate(review_feedback: str = "") -> dict:
             if executor is not None:
-                # 业务处理器路径：内部完成 LLM 调用与埋点
+                # 业务处理器路径：把评审反馈写入 ctx 供处理器读取
+                if review_feedback:
+                    ctx.review_feedback = review_feedback
                 return executor(ctx, guard)
             # 通用策略图路径
+            extra_context = json.dumps(context, ensure_ascii=False)[:1500]
+            if review_feedback:
+                extra_context += "\n\n" + review_feedback
             strategy = get_strategy(strategy_name or self.agent.strategy)
-            system_prompt = self._build_system_prompt(json.dumps(context, ensure_ascii=False)[:1500])
+            system_prompt = self._build_system_prompt(extra_context)
             return strategy.run(
                 system_prompt=system_prompt,
                 user_input=user_input,
@@ -180,9 +199,10 @@ class AgentRuntime:
                     break
                 if decision == GateDecision.RETRY and retry_count < max_retries:
                     retry_count += 1
+                    feedback = self._build_review_feedback(verdict)
                     logger.info("质量门禁触发重试 (%d/%d): agent=%s", retry_count, max_retries, self.agent.name)
                     try:
-                        result = _generate()
+                        result = _generate(review_feedback=feedback)
                     except Exception as exc:
                         logger.error("Agent %s 重试生成失败: %s", self.agent.name, exc)
                         audit("agent.run.retry_error", f"agent:{self.agent.name}", {"run_id": ctx.run_id, "error": str(exc)}, db=self.db)

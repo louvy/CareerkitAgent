@@ -37,6 +37,8 @@ def run_diagnosis(version_id: int, ctx: RunContext, guard: ToolGuard) -> ResumeD
     """简历诊断：只读快照 + 结构化输出。"""
     resume_text = guard.invoke("get_resume", version_id=version_id)
     system = constitution_text() + "\n\n" + DIAGNOSIS_SYSTEM_PROMPT
+    if getattr(ctx, "review_feedback", ""):
+        system += "\n\n" + ctx.review_feedback
     user = f"请诊断以下简历：\n\n{resume_text}"
     result = chat_json(system, user, ResumeDiagnosis, ctx=ctx)
     ctx.trace.final_output = json.dumps(result.model_dump(), ensure_ascii=False)
@@ -55,6 +57,8 @@ def run_optimize(
     resume_text = guard.invoke("get_resume", version_id=version_id)
     direction_text = "；".join(_DIRECTIONS_TEXT.get(d, d) for d in directions) or "整体优化"
     system = constitution_text() + "\n\n" + OPTIMIZE_SYSTEM_PROMPT
+    if getattr(ctx, "review_feedback", ""):
+        system += "\n\n" + ctx.review_feedback
     user = (
         f"简历原文：\n{resume_text}\n\n"
         f"用户选择的优化方向：{direction_text}\n"

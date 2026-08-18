@@ -32,6 +32,8 @@ class RunContext:
     tool_calls: list[dict] = field(default_factory=list)
     # Agent 配置的模型名（覆盖全局默认 chat 模型）
     model: str | None = None
+    # 质量门禁 RETRY 时由 reviewer 回灌的评审反馈（issues/suggestions），供生成方修正
+    review_feedback: str = ""
 
     def add_tool_call(self, name: str, args: dict, result: Any, ok: bool = True) -> None:
         self.tool_calls.append(

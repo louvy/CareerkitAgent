@@ -9,7 +9,7 @@
 
 **业务模块**
 
-- **简历库**：简历 CRUD + **JadeAI 所见即所得编辑器**——50 套模板、hex 主题色、排版密度、自定义 CSS、区块拖拽排序（dnd-kit）、自动保存与撤销栈；AI 诊断（只读）→ 勾选问题 → 逐条确认建议 → 生成独立优化版本（原版保留）；支持 HTML（所见即所得）与 Word（主题色/双栏/密度渲染）导出。
+- **简历库**：简历 CRUD + **JadeAI 所见即所得编辑器**——50 套模板、hex 主题色、排版密度、自定义 CSS、区块拖拽排序（dnd-kit）、自动保存与撤销栈；AI 诊断（只读）→ 勾选问题 → 逐条确认建议 → 生成独立优化版本（原版保留）；支持 HTML（所见即所得）与 Word（主题色/双栏/密度渲染）导出；支持从 PDF / Word / TXT / MD 导入并自动重组为结构化简历（仅重组已有文本、不虚构）。
 - **JD 匹配**：粘贴 JD → 选择简历版本 → 逐条要求匹配诊断 + 内容重排与措辞优化建议（不虚构经历）。
 - **面试刷题**：基于简历 + JD 按能力画像出题（核心知识/项目深挖/行为面试）→ 逐题作答 → reviewer 独立复盘；另提供「模拟面试」会话（interview-coach 一次一问、自适应追问）。
 - **Agent 控制台**：7 个内置 Agent（求职编排器/简历诊断/简历优化/JD 匹配/面试出题/模拟面试官/质量评审员），支持查看、克隆、自定义配置，按闭环状态机流转。
@@ -17,7 +17,7 @@
 **管理模块**
 
 - **模型管理**：chat / embedding 两类 LLM 模型 CRUD，API Key Fernet 加密存储（列表仅显示掩码），真实调用连接测试，同分类唯一默认模型。
-- **知识库**：多知识库管理，文档（txt/md）上传 → 切块（auto 段落感知 / fixed 固定窗口，大小与重叠可调，支持切块预览）→ 指定 embedding 模型向量化入库（原文存 MinIO）；**混合检索**（pg_trgm 关键词 + pgvector 向量 + RRF 融合）。
+- **知识库**：多知识库管理，文档（txt/md/**PDF**）上传 → 切块（auto 段落感知 / fixed 固定窗口，大小与重叠可调，支持切块预览）→ 指定 embedding 模型向量化入库（原文存 MinIO）；**混合检索**（pg_trgm 关键词 + pgvector 向量 + RRF 融合）；新增 **网页 URL 导入**（`import-url`，含 SSRF 防护：仅 http/https、拒绝内网/保留/回环地址、不跟随重定向）。
 - **工具库**：http / mcp 两类自定义工具 CRUD，供 Agent 挂载（挂载经 ToolGuard 白名单校验）。
 
 **可观测模块**
@@ -80,6 +80,7 @@
 - **生成/评估分离**：业务 Agent 输出先经独立 `reviewer` Agent 评审（fact_accuracy / relevance / actionability / clarity / constitution 五维评分），达到阈值才返回；
 - **质量门禁决策**：`pass`（通过）/ `retry`（重试）/ `degrade`（降级展示）/ `reject`（拒绝，不落地）；宪法级违规直接拒绝；
 - **结构化输出**：所有 Agent 输出经 Pydantic schema 校验（如诊断 ≤12 条、优化建议逐条可编辑）。
+- **门禁重试注入评审反馈**：`retry` 决策时将 reviewer 的 issues/suggestions 回灌给生成方（拼入 system 提示词），避免盲重试复现同样问题；生成/评估分离保持不变。
 
 ## 快速启动
 
@@ -126,7 +127,7 @@ uv sync --group dev
 uv run pytest tests -v          # 需中间件已启动（使用 careerkit_test 测试库）
 ```
 
-46 个测试用例，覆盖：宪法规则校验（虚构检测）、ToolGuard 白名单、ClosedLoop 状态机非法流转、QualityGate 四类决策、闭环 API 生命周期、简历/知识库 CRUD、Harness 诊断管道（mock LLM 下 run/trace 落库与宪法拒绝路径）。
+70 个测试用例（含新增「简历导入」「知识库 PDF / URL 导入」「门禁 RETRY 反馈」三类用例），覆盖：宪法规则校验（虚构检测）、ToolGuard 白名单、ClosedLoop 状态机非法流转、QualityGate 四类决策、闭环 API 生命周期、简历/知识库 CRUD、Harness 诊断管道（mock LLM 下 run/trace 落库与宪法拒绝路径）、SSRF 防护与导入解析。
 
 ## 目录结构
 
@@ -159,7 +160,7 @@ CareerkitAgent/
 
 - 单用户自部署（无认证/多租户），LLM 密钥存模型管理页（Fernet 加密）；
 - LLM 与 Embedding 均走 OpenAI 兼容接口（Embedding 维度由所选模型决定，知识库可指定 embedding 模型）；
-- 知识库上传目前支持 txt/md 文本格式；
+- 知识库上传支持 txt / md / **PDF** 文本与 **网页 URL**（含 SSRF 防护）；
 - 不含：申请跟踪看板、求职信生成、多用户协作。
 
 ## License

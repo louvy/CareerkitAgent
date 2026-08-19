@@ -13,10 +13,62 @@ import type {
   SectionContent,
   ThemeConfig,
 } from '@/types/resume';
-import type { SectionType } from '@/lib/constants';
+import { SECTION_TYPES, type SectionType } from '@/lib/constants';
 import type { ResumeContent } from '@/types';
 
 export const JADE_TEMPLATE_PREFIX = 'jadeai-';
+
+/** 把 LLM/导入可能返回的中文或别名 type 归一化为前端 SectionType */
+function normalizeSectionType(raw: string): SectionType {
+  const t = String(raw || '').trim().toLowerCase().replace(/\s+/g, '_');
+  const aliasMap: Record<string, SectionType> = {
+    // 中文（按简历习惯）
+    基本信息: 'personal_info',
+    个人信息: 'personal_info',
+    个人资料: 'personal_info',
+    教育经历: 'education',
+    教育背景: 'education',
+    学历: 'education',
+    工作经历: 'work_experience',
+    工作经验: 'work_experience',
+    工作: 'work_experience',
+    项目经历: 'projects',
+    项目经验: 'projects',
+    项目: 'projects',
+    技能: 'skills',
+    技术栈: 'skills',
+    专业技能: 'skills',
+    证书: 'certifications',
+    资格证书: 'certifications',
+    语言: 'languages',
+    语言能力: 'languages',
+    自我评价: 'summary',
+    个人简介: 'summary',
+    自我介绍: 'summary',
+    其他: 'custom',
+    附加: 'custom',
+    // 英文别名
+    basics: 'personal_info',
+    personal: 'personal_info',
+    info: 'personal_info',
+    profile: 'personal_info',
+    experience: 'work_experience',
+    work: 'work_experience',
+    job: 'work_experience',
+    project: 'projects',
+    skill: 'skills',
+    certification: 'certifications',
+    language: 'languages',
+    summary: 'summary',
+    github: 'github',
+    qr_code: 'qr_codes',
+    custom: 'custom',
+  };
+  const mapped = aliasMap[t];
+  if (mapped) return mapped;
+  if ((SECTION_TYPES as readonly string[]).includes(t)) return t as SectionType;
+  return 'custom';
+}
 
 /** 与 theme-editor DEFAULT_THEME 保持一致 */
 export const DEFAULT_THEME_CONFIG: ThemeConfig = {
@@ -165,7 +217,7 @@ export function toJadeResume(content: ResumeContent | undefined | null): Resume 
     // 复用现有转换把它映射成 jade 结构，保证编辑器能显示导入内容（不丢文本）。
     const legacy = (c as { sections: { type?: string; title?: string; items?: unknown[] }[] }).sections;
     sections = legacy.map((sec, i) => {
-      const type = (sec.type || 'custom') as SectionType;
+      const type = normalizeSectionType(sec.type || 'custom');
       let items = (sec.items as (string | Record<string, string>)[]) || [];
       // 个人信息多为「姓名：张三」这类键值行，先解析成对象才能合并进个人信息字段
       if (type === 'personal_info' && items.length > 0 && items.every((it) => typeof it === 'string')) {

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 class ResumeSection(BaseModel):
     """一个简历区块。"""
 
-    type: str = Field(default="custom", description="区块类型，如 basics/education/experience/projects/skills 等")
+    type: str = Field(default="custom", description="区块类型，固定取值：personal_info/summary/work_experience/education/projects/skills/certifications/languages/github/qr_codes/custom")
     title: str = Field(description="区块标题，如「项目经历」")
     items: list[str] = Field(default_factory=list, description="该区块下的要点/条目文本列表（字符串）")
 

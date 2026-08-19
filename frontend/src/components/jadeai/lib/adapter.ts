@@ -13,6 +13,7 @@ import type {
   SectionContent,
   ThemeConfig,
 } from '@/types/resume';
+import type { SectionType } from '@/lib/constants';
 import type { ResumeContent } from '@/types';
 
 export const JADE_TEMPLATE_PREFIX = 'jadeai-';
@@ -153,11 +154,40 @@ export function isJadeTemplate(template: string | undefined): boolean {
 export function toJadeResume(content: ResumeContent | undefined | null): Resume {
   const c: ResumeContent = content || {};
   const jade = c.jade as { sections?: ResumeSection[]; themeConfig?: ThemeConfig; template?: string } | undefined;
-  const sections: ResumeSection[] = Array.isArray(jade?.sections)
-    ? jade.sections.map((s) => ({ ...s, content: s.content }))
-    : [];
-  const pi = sections.find((s) => s.type === 'personal_info')?.content as { fullName?: string } | undefined;
   const now = new Date();
+
+  let sections: ResumeSection[];
+  if (Array.isArray(jade?.sections) && jade.sections.length > 0) {
+    // 正常路径：手动保存的简历已写好 jade 结构，直接还原
+    sections = jade.sections.map((s) => ({ ...s, content: s.content }));
+  } else if (Array.isArray((c as { sections?: unknown[] }).sections) && (c as { sections?: unknown[] }).sections!.length > 0) {
+    // 兼容路径：导入接口只写了 legacy sections（{type,title,items:string[]}，无 jade）。
+    // 复用现有转换把它映射成 jade 结构，保证编辑器能显示导入内容（不丢文本）。
+    const legacy = (c as { sections: { type?: string; title?: string; items?: unknown[] }[] }).sections;
+    sections = legacy.map((sec, i) => {
+      const type = (sec.type || 'custom') as SectionType;
+      let items = (sec.items as (string | Record<string, string>)[]) || [];
+      // 个人信息多为「姓名：张三」这类键值行，先解析成对象才能合并进个人信息字段
+      if (type === 'personal_info' && items.length > 0 && items.every((it) => typeof it === 'string')) {
+        items = suggestionTextToLegacyItems((items as string[]).join('\n'));
+      }
+      return {
+        id: `s-${i}-${Math.random().toString(36).slice(2, 10)}`,
+        resumeId: '',
+        type,
+        title: sec.title || '',
+        sortOrder: i,
+        visible: true,
+        content: legacyItemsToContent(type, items) as unknown as SectionContent,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies ResumeSection;
+    });
+  } else {
+    sections = [];
+  }
+
+  const pi = sections.find((s) => s.type === 'personal_info')?.content as { fullName?: string } | undefined;
   return {
     id: `resume-${Date.now()}`,
     userId: '',
@@ -226,7 +256,7 @@ export function suggestionTextToLegacyItems(text: string): (Record<string, strin
 }
 
 /** 旧版 items → JadeAI 结构化 section content（按 section 类型决定形状） */
-function legacyItemsToContent(type: string, items: (Record<string, string> | string)[]): Record<string, unknown> {
+export function legacyItemsToContent(type: string, items: (Record<string, string> | string)[]): Record<string, unknown> {
   if (type === 'personal_info') {
     const merged: Record<string, unknown> = {};
     for (const it of items) {

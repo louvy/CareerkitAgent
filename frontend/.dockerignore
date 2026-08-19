@@ -1,0 +1,16 @@
+# 依赖与构建产物：交给镜像内 alpine 重新安装/构建，绝不用本机（Windows）二进制
+node_modules
+.next
+*.tsbuildinfo
+
+# 版本控制与元信息：无需进入构建上下文
+.git
+.gitignore
+README.md
+Dockerfile
+.dockerignore
+
+# 环境变量与日志
+.env
+.env.*
+npm-debug.log

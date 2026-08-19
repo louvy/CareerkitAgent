@@ -285,7 +285,7 @@ export function suggestionTextToLegacyItems(text: string): (Record<string, strin
       cur = null;
       continue;
     }
-    const idx = line.indexOf(':');
+    const idx = line.search(/[:：]/);
     if (idx > 0) {
       const key = FIELD_ALIASES[line.slice(0, idx).trim()] || line.slice(0, idx).trim();
       const val = line.slice(idx + 1).trim();
